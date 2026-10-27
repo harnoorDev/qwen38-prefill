@@ -7,6 +7,27 @@ using the official released traces
 
 Status: preliminary. The 10,000-sample sweep of the incident point is complete. Testing continues; results land in `data/` as runs finish.
 
+## Pipeline
+
+```mermaid
+flowchart TD
+    P["CohereLabs trace parquet<br/>row 0 token_ids"] --> T["Qwen tokenizer<br/>decode + round-trip assert"]
+    T --> X["2,323-token incident prefix<br/>ends at PROBE_PAYLOAD_ABC123"]
+    X --> C{token-aligned<br/>truncation}
+    C -->|full prefix| F[incident point]
+    C -->|s1 .. s4| S["progressive curl flags"]
+    F --> V["local vLLM /v1/completions<br/>temp 1.0, top_k 20, n=8, 48 tok"]
+    S --> V
+    U["chat_probe.py<br/>un-prefilled control"] --> V
+    V --> K["classify: first URL to host family<br/>aliyun / routify / metadata-IP /<br/>localhost / placeholder / other"]
+    K --> R["summary_TAG.json<br/>url%, aliyun%, routify-host%, CI"]
+    K -.->|completions kept as data| N["no host resolved,<br/>probed, or contacted"]
+```
+
+The classifier (`classify()` in `repro_common.py`) is the one piece of logic
+shared by the sampler and the offline re-analysis, so a number recomputed from
+the committed samples comes from the same code that labelled them.
+
 ## What was tested
 
 - Model: `qwen3.8-flash-next-nvfp4-dual-v030`, a community NVFP4-quantized merge of
@@ -114,7 +135,7 @@ defender blocklisting. The underlying trace dataset is public.
 ## Run it
 
 ```bash
-python3 -m venv --system-site-packages .venv && .venv/bin/pip install pyarrow requests tokenizers
+python3 -m venv --system-site-packages .venv && .venv/bin/pip install -r requirements.txt
 mkdir -p data && curl -sL -o data/trace.parquet \
   'https://huggingface.co/datasets/CohereLabs/10-2026-qwen-investigation-traces/resolve/main/data/train-00000-of-00001.parquet?download=true'
 # tokenizer.json auto-downloads on first run
@@ -126,9 +147,34 @@ VLLM_URL=http://127.0.0.1:8888/v1/completions VLLM_MODEL=<served-model> \
 Requires any local vLLM (or compatible) server serving a Qwen3.8-Flash-Next build with the raw
 completions endpoint enabled.
 
+## Verify the published numbers (no GPU)
+
+The committed `data/samples_*.jsonl` can be re-scored from the standard library
+alone — no model, no download, no `pyarrow`/`tokenizers`:
+
+```bash
+python analyze.py                 # re-score every committed run
+python analyze.py n10000          # just the headline 10k run
+pip install pytest && pytest -q   # pin the classifier's behaviour (13 cases)
+```
+
+`analyze.py` recomputes url% / aliyun% / routify-host% with a 95% Wilson
+interval using the canonical `classify()`. The headline **n10000** run
+re-scores to its stored labels exactly (`drift 0`, aliyun 40.76%, CI
+39.8–41.73). Two columns are new: `err` counts `__ERROR__` sampling-failure
+records (the original script folded these into `no_url`), and `drift` counts
+completions whose stored label predates the `url_example_placeholder` →
+`url_placeholder` rename. The `routify%` column is the routify host *family*
+rate (as `sample_repro.py` computes it), which can run a point or two above the
+exact-host figures quoted in the tables above.
+
 ## Files
 
-- `sample_repro.py`: prefill sampler and classifier. Relative paths, env-var endpoint, per-point N.
+- `repro_common.py`: shared sampling params, control-point markers, and the `classify()` URL→host-family logic. Standard library only, so the data can be re-scored without the sampling dependencies.
+- `sample_repro.py`: prefill sampler. Relative paths, env-var endpoint, per-point N. Imports the classifier from `repro_common`.
+- `analyze.py`: GPU-free re-scoring of the committed samples, with Wilson confidence intervals. Read-only by default; `--write` regenerates the summaries.
 - `chat_probe.py`: un-prefilled chat-turn control.
+- `tests/test_classify.py`: pytest cases pinning the classifier's category boundaries.
+- `requirements.txt`: runtime dependencies for the sampling path.
 - `data/`: `samples_<tag>.jsonl` and `summary_<tag>.json` per run. `runs/` holds archived run copies.
   `trace.parquet` is the public dataset artifact (attributed above). `tokenizer.json` is gitignored.
