@@ -1,0 +1,27 @@
+name: verify
+
+# Runs the classifier tests and re-scores the committed samples. Both are
+# GPU-free and need no model or network, so the published numbers are checked
+# on every push and pull request.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependency
+        run: pip install pytest
+      - name: Pin classifier behaviour
+        run: pytest -q
+      - name: Re-score committed samples (no GPU)
+        run: python analyze.py

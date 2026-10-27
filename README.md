@@ -176,5 +176,4 @@ exact-host figures quoted in the tables above.
 - `chat_probe.py`: un-prefilled chat-turn control.
 - `tests/test_classify.py`: pytest cases pinning the classifier's category boundaries.
 - `requirements.txt`: runtime dependencies for the sampling path.
-- `data/`: `samples_<tag>.jsonl` and `summary_<tag>.json` per run. `runs/` holds archived run copies.
-  `trace.parquet` is the public dataset artifact (attributed above). `tokenizer.json` is gitignored.
+- `data/`: `samples_<tag>.jsonl` and `summary_<tag>.json` per run, alongside the `trace.*` dataset artifacts and the sweep log. `trace.parquet` is the public dataset artifact (attributed above). `tokenizer.json` is gitignored.
