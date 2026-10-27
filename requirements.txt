@@ -1,0 +1,7 @@
+# Runtime dependencies for the sampling path (sample_repro.py, chat_probe.py).
+# analyze.py and the tests need only the standard library + repro_common.py.
+requests>=2.31
+pyarrow>=15.0
+tokenizers>=0.19
+
+# For the tests:  pip install pytest
